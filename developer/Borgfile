@@ -1,0 +1,44 @@
+# Borgfile for core-dev TIM bundle
+# This will be processed by: core build --borgfile -o core-dev.tim
+
+# Base from the Docker build output or direct Alpine
+FROM alpine:3.22
+
+# Core binary (the orchestrator)
+ADD https://github.com/host-uk/core/releases/latest/download/core-linux-${ARCH} /usr/local/bin/core
+
+# ============================================================
+# AI / LLM Assistants
+# ============================================================
+ADD https://github.com/anthropics/claude-code/releases/latest/download/claude-linux-${ARCH} /usr/local/bin/claude
+# ADD gemini, aider, ollama, llm...
+
+# ============================================================
+# Version Control
+# ============================================================
+ADD https://github.com/cli/cli/releases/latest/download/gh_linux_${ARCH}.tar.gz /tmp/gh.tar.gz
+# Extract and install gh...
+
+# ============================================================
+# Languages / Runtimes
+# ============================================================
+# FrankenPHP - embedded PHP runtime
+ADD https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${ARCH} /usr/local/bin/frankenphp
+
+# Node.js
+ADD https://nodejs.org/dist/latest-lts/node-linux-${ARCH}.tar.xz /tmp/node.tar.xz
+
+# Go, Python, Rust, etc...
+
+# ============================================================
+# Configuration
+# ============================================================
+ADD config/zshrc /etc/skel/.zshrc
+ADD config/starship.toml /etc/skel/.config/starship.toml
+ADD config/aliases.sh /etc/profile.d/aliases.sh
+
+# ============================================================
+# OCI Config
+# ============================================================
+# Generated automatically by core build
+# Sets up proper entrypoint, env vars, capabilities

@@ -1,0 +1,90 @@
+# Starship prompt configuration for core-dev
+# https://starship.rs/config/
+
+format = """
+$username\
+$hostname\
+$directory\
+$git_branch\
+$git_status\
+$php\
+$nodejs\
+$golang\
+$python\
+$rust\
+$docker_context\
+$kubernetes\
+$cmd_duration\
+$line_break\
+$character"""
+
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+
+[username]
+style_user = "bold blue"
+format = "[$user]($style) "
+show_always = false
+
+[hostname]
+ssh_only = true
+format = "@ [$hostname](bold yellow) "
+
+[directory]
+truncation_length = 3
+truncate_to_repo = true
+style = "bold cyan"
+
+[git_branch]
+symbol = " "
+style = "bold purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+format = '([\[$all_status$ahead_behind\]]($style) )'
+style = "bold red"
+
+[php]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "147"
+
+[nodejs]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "bold green"
+
+[golang]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "bold cyan"
+
+[python]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "bold yellow"
+
+[rust]
+symbol = " "
+format = "[$symbol($version )]($style)"
+style = "bold red"
+
+[docker_context]
+symbol = " "
+format = "[$symbol$context]($style) "
+style = "blue bold"
+only_with_files = true
+
+[kubernetes]
+symbol = "☸ "
+format = '[$symbol$context( \($namespace\))]($style) '
+style = "cyan bold"
+disabled = false
+
+[cmd_duration]
+min_time = 2_000
+format = "took [$duration](bold yellow) "
+
+[line_break]
+disabled = false

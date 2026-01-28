@@ -1,0 +1,44 @@
+# Borgfile for server-php TIM bundle
+# This will be processed by: core build --borgfile -o server-php.tim
+
+# Base from Alpine
+FROM alpine:3.22
+
+# ============================================================
+# PHP Runtime (FrankenPHP or PHP-FPM)
+# ============================================================
+ADD https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${ARCH} /usr/local/bin/frankenphp
+
+# Or traditional PHP-FPM setup
+# ADD php${PHP_VERSION} /usr/bin/php
+# ADD php${PHP_VERSION}-fpm /usr/sbin/php-fpm
+
+# ============================================================
+# Nginx (optional, FrankenPHP has Caddy built-in)
+# ============================================================
+# ADD nginx /usr/sbin/nginx
+# ADD config/nginx/ /etc/nginx/
+
+# ============================================================
+# PHP Extensions
+# ============================================================
+# Common extensions bundled with FrankenPHP
+# Additional extensions via PHP_EXTENSIONS env var
+
+# ============================================================
+# Configuration
+# ============================================================
+ADD config/php-fpm/ /etc/php/
+ADD config/supervisor/ /etc/supervisor/
+
+# ============================================================
+# Application Skeleton
+# ============================================================
+ADD product/ /var/www/html/
+
+# ============================================================
+# OCI Config
+# ============================================================
+# Exposes: 80 (HTTP), 443 (HTTPS), 8080 (WebSocket/Reverb)
+# User: www-data
+# Entrypoint: frankenphp run --config /etc/caddy/Caddyfile

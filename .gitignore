@@ -1,0 +1,19 @@
+# Build outputs
+dist/
+*.tim
+*.stim
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+tmp/
+*.tmp
+*.log
