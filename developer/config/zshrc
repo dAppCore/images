@@ -1,0 +1,69 @@
+# Core Developer - Zsh Configuration
+
+# Path to oh-my-zsh installation
+export ZSH="$HOME/.oh-my-zsh"
+
+# Theme (using starship instead)
+ZSH_THEME=""
+
+# Plugins
+plugins=(
+    git
+    docker
+    kubectl
+    composer
+    npm
+    golang
+    rust
+    python
+    zsh-autosuggestions
+    zsh-syntax-highlighting
+)
+
+# Load oh-my-zsh
+source $ZSH/oh-my-zsh.sh
+
+# User configuration
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export EDITOR=nvim
+export VISUAL=nvim
+
+# Paths
+export GOPATH=$HOME/go
+export CARGO_HOME=$HOME/.cargo
+export PATH="$GOPATH/bin:$CARGO_HOME/bin:$HOME/.local/bin:$HOME/.composer/vendor/bin:$PATH"
+
+# FZF configuration
+export FZF_DEFAULT_COMMAND='fd --type f --hidden --follow --exclude .git'
+export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+export FZF_ALT_C_COMMAND='fd --type d --hidden --follow --exclude .git'
+
+# Bat configuration
+export BAT_THEME="TwoDark"
+
+# History
+HISTSIZE=50000
+SAVEHIST=50000
+setopt SHARE_HISTORY
+setopt HIST_IGNORE_DUPS
+setopt HIST_IGNORE_SPACE
+
+# Load aliases
+[[ -f /etc/profile.d/aliases.sh ]] && source /etc/profile.d/aliases.sh
+
+# Initialize tools
+eval "$(starship init zsh)"
+eval "$(zoxide init zsh)"
+eval "$(direnv hook zsh)"
+
+# Welcome message
+if [[ -o interactive ]]; then
+    echo ""
+    echo "  Core Developer Environment"
+    echo "  Run 'claude' to start AI-assisted development"
+    echo ""
+fi
+
+# Start in workspace if it exists
+[[ -d /workspace ]] && cd /workspace
