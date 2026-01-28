@@ -1,0 +1,272 @@
+# ============================================================
+# LinuxKit Configuration - PHP Server
+#
+# A minimal production PHP server with Nginx + PHP-FPM,
+# built as a bootable VM.
+#
+# Build: linuxkit build -format qcow2-bios server-php/linuxkit.yml
+# Run:   linuxkit run qemu server-php
+# ============================================================
+
+kernel:
+  image: linuxkit/kernel:6.6.13
+  cmdline: "console=ttyS0 console=tty0"
+
+init:
+  - linuxkit/init:v1.2.0
+  - linuxkit/runc:v1.1.12
+  - linuxkit/containerd:v1.7.13
+  - linuxkit/ca-certificates:v1.0.0
+
+onboot:
+  # System initialization
+  - name: sysctl
+    image: linuxkit/sysctl:v1.0.0
+
+  - name: sysfs
+    image: linuxkit/sysfs:v1.0.0
+
+  # Format and mount persistent data volume
+  - name: format
+    image: linuxkit/format:v1.0.0
+
+  - name: mount
+    image: linuxkit/mount:v1.0.0
+    command: ["/usr/bin/mountie", "/var/www/html"]
+
+onshutdown:
+  - name: shutdown
+    image: linuxkit/shutdown:v1.0.0
+
+services:
+  # ============================================================
+  # Core Services
+  # ============================================================
+  - name: rngd
+    image: linuxkit/rngd:v1.0.0
+
+  - name: dhcpcd
+    image: linuxkit/dhcpcd:v1.0.0
+
+  - name: ntpd
+    image: linuxkit/openntpd:v1.0.0
+
+  # ============================================================
+  # SSH Access (for management)
+  # ============================================================
+  - name: sshd
+    image: linuxkit/sshd:v1.0.0
+    binds:
+      - /etc/ssh/authorized_keys:/root/.ssh/authorized_keys
+    capabilities:
+      - CAP_NET_BIND_SERVICE
+      - CAP_SYS_CHROOT
+      - CAP_SETUID
+      - CAP_SETGID
+
+  # ============================================================
+  # PHP Server Container
+  # ============================================================
+  - name: server-php
+    image: ghcr.io/host-uk/server-php:latest
+    capabilities:
+      - CAP_NET_BIND_SERVICE
+      - CAP_CHOWN
+      - CAP_SETUID
+      - CAP_SETGID
+    net: host
+    binds:
+      - /var/www/html:/var/www/html
+      - /etc/php-server:/etc/php-server:ro
+    env:
+      - APP_ENV=production
+      - PHP_VERSION=84
+    runtime:
+      mkdir:
+        - /var/www/html
+
+  # ============================================================
+  # Health Check Service
+  # ============================================================
+  - name: healthcheck
+    image: linuxkit/healthcheck:v1.0.0
+    binds:
+      - /run:/run
+    capabilities:
+      - CAP_NET_RAW
+    command:
+      - /healthcheck
+      - --endpoint=http://127.0.0.1/health
+      - --interval=30s
+      - --timeout=10s
+
+# ============================================================
+# Static Files
+# ============================================================
+files:
+  # SSH authorized keys (placeholder - mount your own)
+  - path: /etc/ssh/authorized_keys
+    contents: |
+      # Add your SSH public keys here
+      # ssh-ed25519 AAAA... user@host
+    mode: "0600"
+
+  # PHP-FPM configuration
+  - path: /etc/php-server/php-fpm.conf
+    contents: |
+      [global]
+      pid = /run/php-fpm.pid
+      error_log = /proc/self/fd/2
+      daemonize = no
+
+      [www]
+      user = nobody
+      group = nobody
+      listen = /run/php-fpm.sock
+      listen.owner = nobody
+      listen.group = nobody
+      listen.mode = 0660
+
+      pm = dynamic
+      pm.max_children = 50
+      pm.start_servers = 5
+      pm.min_spare_servers = 5
+      pm.max_spare_servers = 35
+      pm.max_requests = 500
+
+      clear_env = no
+      catch_workers_output = yes
+      decorate_workers_output = no
+
+      php_admin_value[error_log] = /proc/self/fd/2
+      php_admin_flag[log_errors] = on
+    mode: "0644"
+
+  # Nginx configuration
+  - path: /etc/php-server/nginx.conf
+    contents: |
+      worker_processes auto;
+      error_log /dev/stderr warn;
+      pid /run/nginx.pid;
+
+      events {
+          worker_connections 1024;
+          multi_accept on;
+          use epoll;
+      }
+
+      http {
+          include /etc/nginx/mime.types;
+          default_type application/octet-stream;
+
+          log_format main '$remote_addr - $remote_user [$time_local] "$request" '
+                          '$status $body_bytes_sent "$http_referer" '
+                          '"$http_user_agent" "$http_x_forwarded_for"';
+
+          access_log /dev/stdout main;
+
+          sendfile on;
+          tcp_nopush on;
+          tcp_nodelay on;
+          keepalive_timeout 65;
+          types_hash_max_size 2048;
+
+          # Gzip compression
+          gzip on;
+          gzip_vary on;
+          gzip_proxied any;
+          gzip_comp_level 6;
+          gzip_types text/plain text/css text/xml application/json application/javascript
+                     application/rss+xml application/atom+xml image/svg+xml;
+
+          server {
+              listen 80;
+              listen [::]:80;
+              server_name _;
+
+              root /var/www/html/public;
+              index index.php index.html;
+
+              # Health check endpoint
+              location /health {
+                  access_log off;
+                  return 200 "OK\n";
+                  add_header Content-Type text/plain;
+              }
+
+              location / {
+                  try_files $uri $uri/ /index.php?$query_string;
+              }
+
+              location ~ \.php$ {
+                  fastcgi_pass unix:/run/php-fpm.sock;
+                  fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+                  include fastcgi_params;
+                  fastcgi_hide_header X-Powered-By;
+              }
+
+              # Security headers
+              add_header X-Frame-Options "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff" always;
+              add_header X-XSS-Protection "1; mode=block" always;
+
+              # Deny hidden files
+              location ~ /\. {
+                  deny all;
+              }
+          }
+      }
+    mode: "0644"
+
+  # Supervisor configuration (used inside the container)
+  - path: /etc/php-server/supervisord.conf
+    contents: |
+      [supervisord]
+      nodaemon=true
+      user=root
+      logfile=/dev/null
+      logfile_maxbytes=0
+      pidfile=/run/supervisord.pid
+
+      [program:php-fpm]
+      command=/usr/sbin/php-fpm84 -F -y /etc/php-server/php-fpm.conf
+      stdout_logfile=/dev/stdout
+      stdout_logfile_maxbytes=0
+      stderr_logfile=/dev/stderr
+      stderr_logfile_maxbytes=0
+      autorestart=true
+      startretries=5
+
+      [program:nginx]
+      command=/usr/sbin/nginx -g 'daemon off;' -c /etc/php-server/nginx.conf
+      stdout_logfile=/dev/stdout
+      stdout_logfile_maxbytes=0
+      stderr_logfile=/dev/stderr
+      stderr_logfile_maxbytes=0
+      autorestart=true
+      startretries=5
+      depends_on=php-fpm
+    mode: "0644"
+
+  # Motd
+  - path: /etc/motd
+    contents: |
+
+      ╔══════════════════════════════════════════════════════════════╗
+      ║           Host UK Core PHP Server                            ║
+      ║                                                              ║
+      ║  Stack: Alpine + Nginx + PHP-FPM                             ║
+      ║  Webroot: /var/www/html                                      ║
+      ║                                                              ║
+      ║  Health: http://localhost/health                             ║
+      ╚══════════════════════════════════════════════════════════════╝
+
+    mode: "0644"
+
+# ============================================================
+# Trust Configuration
+# ============================================================
+trust:
+  org:
+    - linuxkit
+    - library

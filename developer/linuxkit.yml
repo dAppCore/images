@@ -1,0 +1,230 @@
+# ============================================================
+# LinuxKit Configuration - Developer Environment
+#
+# A complete developer environment mirroring the Docker
+# developer image, built as a bootable VM.
+#
+# Build: linuxkit build -format qcow2-bios developer/linuxkit.yml
+# Run:   linuxkit run qemu developer
+# ============================================================
+
+kernel:
+  image: linuxkit/kernel:6.6.13
+  cmdline: "console=ttyS0 console=tty0"
+
+init:
+  - linuxkit/init:v1.2.0
+  - linuxkit/runc:v1.1.12
+  - linuxkit/containerd:v1.7.13
+  - linuxkit/ca-certificates:v1.0.0
+
+onboot:
+  # System initialization
+  - name: sysctl
+    image: linuxkit/sysctl:v1.0.0
+
+  - name: sysfs
+    image: linuxkit/sysfs:v1.0.0
+
+  - name: modprobe
+    image: linuxkit/modprobe:v1.0.0
+    command: ["modprobe", "-a", "overlay", "nf_conntrack", "br_netfilter"]
+
+  # Format and mount persistent workspace volume
+  - name: format
+    image: linuxkit/format:v1.0.0
+
+  - name: mount
+    image: linuxkit/mount:v1.0.0
+    command: ["/usr/bin/mountie", "/var/lib/docker", "/workspace"]
+
+onshutdown:
+  - name: shutdown
+    image: linuxkit/shutdown:v1.0.0
+
+services:
+  # ============================================================
+  # Core Services
+  # ============================================================
+  - name: getty
+    image: linuxkit/getty:v1.0.0
+    env:
+      - INSECURE=true
+    binds:
+      - /etc/profile.d:/etc/profile.d
+    capabilities:
+      - CAP_SYS_ADMIN
+      - CAP_SYS_TTY_CONFIG
+
+  - name: rngd
+    image: linuxkit/rngd:v1.0.0
+
+  - name: dhcpcd
+    image: linuxkit/dhcpcd:v1.0.0
+
+  - name: ntpd
+    image: linuxkit/openntpd:v1.0.0
+
+  # ============================================================
+  # SSH Access
+  # ============================================================
+  - name: sshd
+    image: linuxkit/sshd:v1.0.0
+    binds:
+      - /etc/ssh/authorized_keys:/root/.ssh/authorized_keys
+      - /workspace:/workspace
+    capabilities:
+      - CAP_NET_BIND_SERVICE
+      - CAP_SYS_CHROOT
+      - CAP_SETUID
+      - CAP_SETGID
+
+  # ============================================================
+  # Docker-in-LinuxKit (DinL)
+  # ============================================================
+  - name: dockerd
+    image: docker:26.1-dind
+    capabilities:
+      - all
+    net: host
+    pid: host
+    mounts:
+      - type: cgroup
+        options: ["rw", "nosuid", "noexec", "nodev", "relatime"]
+    binds:
+      - /etc/resolv.conf:/etc/resolv.conf
+      - /var/lib/docker:/var/lib/docker
+      - /var/run:/var/run
+      - /workspace:/workspace
+    runtime:
+      mkdir:
+        - /var/lib/docker
+
+  # ============================================================
+  # Developer Environment Container
+  # ============================================================
+  - name: developer
+    image: ghcr.io/host-uk/core-dev:latest
+    capabilities:
+      - CAP_NET_ADMIN
+      - CAP_SYS_ADMIN
+      - CAP_SETUID
+      - CAP_SETGID
+    net: host
+    binds:
+      - /workspace:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /etc/profile.d:/etc/profile.d:ro
+    env:
+      - TERM=xterm-256color
+      - LANG=C.UTF-8
+      - LC_ALL=C.UTF-8
+      - SHELL=/bin/zsh
+      - GOPATH=/root/go
+      - PATH=/root/go/bin:/root/.local/bin:/root/.composer/vendor/bin:/usr/local/bin:/usr/bin:/bin
+    runtime:
+      mkdir:
+        - /workspace
+
+# ============================================================
+# Static Files
+# ============================================================
+files:
+  # SSH authorized keys (placeholder - mount your own)
+  - path: /etc/ssh/authorized_keys
+    contents: |
+      # Add your SSH public keys here
+      # ssh-ed25519 AAAA... user@host
+    mode: "0600"
+
+  # Profile for shell environment
+  - path: /etc/profile.d/00-developer.sh
+    contents: |
+      #!/bin/sh
+      export TERM=xterm-256color
+      export LANG=C.UTF-8
+      export LC_ALL=C.UTF-8
+      export SHELL=/bin/zsh
+      export EDITOR=vim
+      export GOPATH=/root/go
+      export PATH="/root/go/bin:/root/.local/bin:/root/.composer/vendor/bin:/usr/local/bin:$PATH"
+      cd /workspace 2>/dev/null || true
+    mode: "0644"
+
+  # Shell aliases from developer config
+  - path: /etc/profile.d/aliases.sh
+    contents: |
+      # Core-dev shell aliases
+
+      # Navigation
+      alias ..='cd ..'
+      alias ...='cd ../..'
+      alias ll='eza -la --icons --git'
+      alias la='eza -la --icons'
+      alias lt='eza --tree --level=2 --icons'
+
+      # Git
+      alias g='git'
+      alias gs='git status'
+      alias gd='git diff'
+      alias gc='git commit'
+      alias gp='git push'
+      alias gl='git log --oneline -20'
+      alias gco='git checkout'
+      alias gb='git branch'
+      alias lg='lazygit'
+
+      # Docker
+      alias d='docker'
+      alias dc='docker compose'
+      alias dps='docker ps'
+      alias di='docker images'
+      alias dex='docker exec -it'
+
+      # Kubernetes
+      alias k='kubectl'
+      alias kgp='kubectl get pods'
+      alias kgs='kubectl get svc'
+      alias kgd='kubectl get deployments'
+
+      # PHP/Laravel
+      alias art='php artisan'
+      alias sail='./vendor/bin/sail'
+      alias pest='./vendor/bin/pest'
+      alias pint='./vendor/bin/pint'
+
+      # Core
+      alias c='core'
+      alias cdev='core dev'
+      alias cbuild='core build'
+      alias crun='core run'
+
+      # Misc
+      alias cat='bat'
+      alias find='fd'
+      alias grep='rg'
+    mode: "0644"
+
+  # Motd
+  - path: /etc/motd
+    contents: |
+
+      ╔══════════════════════════════════════════════════════════════╗
+      ║           Host UK Core Developer Environment                 ║
+      ║                                                              ║
+      ║  Tools: Node, Go, PHP, Python, Docker                        ║
+      ║  Workspace: /workspace (persistent)                          ║
+      ║                                                              ║
+      ║  Run 'claude' to start AI-assisted development               ║
+      ╚══════════════════════════════════════════════════════════════╝
+
+    mode: "0644"
+
+# ============================================================
+# Trust Configuration
+# ============================================================
+trust:
+  org:
+    - linuxkit
+    - library
+    - docker
