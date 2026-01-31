@@ -65,8 +65,9 @@ RUN apk add --no-cache \
 # ============================================================
 # VCS & Git Tools
 # ============================================================
+# Note: git-delta not in Alpine repos, install via cargo if needed
 RUN apk add --no-cache \
-    git git-lfs github-cli lazygit git-delta
+    git git-lfs github-cli lazygit
 
 # ============================================================
 # Node.js Ecosystem
