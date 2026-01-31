@@ -1,15 +1,22 @@
+# Host UK Container Images
+# Publishes to both GHCR (org access) and Docker Hub (public)
+#
+# GHCR:       ghcr.io/host-uk/core-images:{image}
+# Docker Hub: lthn/{image}:{version}
+
 name: Build Images
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
+  GHCR_REGISTRY: ghcr.io
+  DOCKERHUB_ORG: lthn
 
 jobs:
   # ============================================================
@@ -27,6 +34,11 @@ jobs:
         image:
           - developer
           - server-php
+        include:
+          - image: developer
+            dockerhub_name: core-dev
+          - image: server-php
+            dockerhub_name: server-php
 
     steps:
       - name: Checkout
@@ -42,21 +54,40 @@ jobs:
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/host-uk/${{ matrix.image == 'developer' && 'core-dev' || matrix.image }}
+          images: |
+            ${{ env.GHCR_REGISTRY }}/host-uk/core-images
+            ${{ env.DOCKERHUB_ORG }}/${{ matrix.dockerhub_name }}
           tags: |
-            type=ref,event=branch
+            # Tag image variant for GHCR (core-images:developer)
+            type=raw,value=${{ matrix.image }},enable=${{ github.ref == 'refs/heads/main' }}
+            # Branch name (core-images:dev, lthn/core-dev:dev)
+            type=ref,event=branch,suffix=-${{ matrix.image }},enable=${{ github.ref != 'refs/heads/main' }}
+            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
+            # PR number
             type=ref,event=pr
+            # Semver tags (v1.0.0 -> 1.0.0, 1.0, 1)
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}},enable=${{ !startsWith(github.ref, 'refs/tags/v0.') }}
+            # Latest on main
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          flavor: |
+            latest=false
 
       - name: Build and push
         uses: docker/build-push-action@v5
@@ -75,51 +106,52 @@ jobs:
   linuxkit:
     name: LinuxKit (${{ matrix.image }}-${{ matrix.arch }})
     runs-on: ubuntu-latest
-    needs: docker  # Needs Docker images to be built first
+    needs: docker
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
 
     strategy:
       matrix:
         image: [developer, server-php]
         arch: [amd64, arm64]
         format: [qcow2-bios, iso-bios]
+        include:
+          - image: developer
+            output_name: core-dev
+          - image: server-php
+            output_name: server-php
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Core CLI
+      - name: Install LinuxKit
         run: |
-          # Download latest core binary
-          curl -fsSL "https://github.com/host-uk/core/releases/latest/download/core-linux-amd64.tar.gz" -o core.tar.gz
-          tar -xzf core.tar.gz
-          sudo mv core /usr/local/bin/core
-          chmod +x /usr/local/bin/core
-          core --version
+          curl -fsSL "https://github.com/linuxkit/linuxkit/releases/download/v1.5.3/linuxkit-linux-amd64" -o linuxkit
+          chmod +x linuxkit
+          sudo mv linuxkit /usr/local/bin/
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Login to GHCR
-        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ${{ env.GHCR_REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build LinuxKit Image
         run: |
           mkdir -p dist
-          core build --type linuxkit \
-            --config ./${{ matrix.image }}/linuxkit.yml \
+          linuxkit build \
             --format ${{ matrix.format }} \
-            --arch ${{ matrix.arch }} \
-            -o ./dist/${{ matrix.image == 'developer' && 'core-dev' || matrix.image }}-${{ matrix.arch }}
+            --name ./dist/${{ matrix.output_name }}-${{ matrix.arch }} \
+            ./${{ matrix.image }}/linuxkit.yml
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.image == 'developer' && 'core-dev' || matrix.image }}-${{ matrix.arch }}-${{ matrix.format }}
+          name: ${{ matrix.output_name }}-${{ matrix.arch }}-${{ matrix.format }}
           path: ./dist/*
 
   # ============================================================
@@ -152,39 +184,3 @@ jobs:
             dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # ============================================================
-  # Build TIM Bundles (when core build --type tim is ready)
-  # ============================================================
-  # tim:
-  #   name: TIM (${{ matrix.image }})
-  #   runs-on: ubuntu-latest
-  #   needs: docker
-  #
-  #   strategy:
-  #     matrix:
-  #       image: [developer, server-php]
-  #       os: [linux, darwin]
-  #       arch: [amd64, arm64]
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Install Core
-  #       run: |
-  #         curl -fsSL https://github.com/host-uk/core/releases/latest/download/core-linux-amd64 -o /usr/local/bin/core
-  #         chmod +x /usr/local/bin/core
-  #
-  #     - name: Build TIM
-  #       run: |
-  #         core build --type tim \
-  #           --borgfile ./${{ matrix.image }}/Borgfile \
-  #           --os ${{ matrix.os }} \
-  #           --arch ${{ matrix.arch }} \
-  #           -o ./dist/${{ matrix.image }}-${{ matrix.os }}-${{ matrix.arch }}.tim
-  #
-  #     - name: Upload artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: ${{ matrix.image }}-${{ matrix.os }}-${{ matrix.arch }}
-  #         path: ./dist/*.tim
