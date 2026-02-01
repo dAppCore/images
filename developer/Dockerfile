@@ -1,7 +1,7 @@
 # ============================================================
-# Core Developer - PHP & Go Development Environment
+# Core Developer - Multi-Language Development Environment
 #
-# Slimmed down environment for PHP and Go development
+# PHP 8.4, Go 1.24, Node 22, Python 3.13
 # with Claude Code CLI support.
 #
 # Build: docker build -t core-dev .
@@ -9,12 +9,17 @@
 # ============================================================
 
 ARG ALPINE_VERSION=3.22
+ARG PYTHON_VERSION=3.13
 
+# Stage 1: Get Python 3.13 from official image
+FROM python:${PYTHON_VERSION}-alpine${ALPINE_VERSION} AS python-stage
+
+# Stage 2: Main image
 FROM alpine:${ALPINE_VERSION}
 
 LABEL maintainer="Snider <snider@host.uk.com>"
 LABEL org.opencontainers.image.source="https://github.com/host-uk/core-images"
-LABEL org.opencontainers.image.description="PHP & Go developer environment"
+LABEL org.opencontainers.image.description="PHP, Go, Node, Python developer environment"
 LABEL org.opencontainers.image.licenses="EUPL-1.2"
 LABEL org.opencontainers.image.vendor="Host UK"
 LABEL org.opencontainers.image.title="Core Developer"
@@ -27,6 +32,8 @@ ENV EDITOR=nvim
 ENV SHELL=/bin/zsh
 ENV GOPATH=/root/go
 ENV PATH="/root/go/bin:/root/.local/bin:/root/.composer/vendor/bin:/usr/local/bin:${PATH}"
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
 # ============================================================
 # Core System & Build Tools
@@ -67,12 +74,12 @@ RUN apk add --no-cache \
     git git-lfs github-cli lazygit
 
 # ============================================================
-# Node.js (minimal - for Claude Code CLI only)
+# Node.js 22 LTS
 # ============================================================
 RUN apk add --no-cache nodejs npm
 
-# Claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code CLI (pinned version)
+RUN npm install -g @anthropic-ai/claude-code@2.1.29
 
 # ============================================================
 # PHP Ecosystem
@@ -111,6 +118,26 @@ RUN apk add --no-cache go
 RUN go install golang.org/x/tools/gopls@v0.17.1 || true && \
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2 && \
     go install github.com/go-task/task/v3/cmd/task@v3.40.1
+
+# ============================================================
+# Python 3.13 (copied from official image)
+# ============================================================
+# Runtime dependencies for Python
+RUN apk add --no-cache libffi sqlite-libs xz-libs
+
+# Copy Python installation from build stage
+COPY --from=python-stage /usr/local/bin/python3 /usr/local/bin/python3
+COPY --from=python-stage /usr/local/bin/python3.13 /usr/local/bin/python3.13
+COPY --from=python-stage /usr/local/bin/pip3 /usr/local/bin/pip3
+COPY --from=python-stage /usr/local/bin/pip3.13 /usr/local/bin/pip3.13
+COPY --from=python-stage /usr/local/lib/python3.13 /usr/local/lib/python3.13
+COPY --from=python-stage /usr/local/lib/libpython3.13.so.1.0 /usr/local/lib/
+COPY --from=python-stage /usr/local/lib/libpython3.so /usr/local/lib/
+
+# Create symlinks and update library cache
+RUN ln -sf /usr/local/bin/python3 /usr/local/bin/python && \
+    ln -sf /usr/local/bin/pip3 /usr/local/bin/pip && \
+    ldconfig /usr/local/lib || true
 
 # ============================================================
 # Database Clients
