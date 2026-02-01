@@ -171,8 +171,8 @@ RUN apk add --no-cache \
     redis \
     sqlite
 
-# usql - universal SQL client
-RUN go install github.com/xo/usql@latest
+# usql - universal SQL client (optional, may require newer Go)
+RUN go install github.com/xo/usql@latest || true
 
 # ============================================================
 # Infrastructure & DevOps
@@ -188,8 +188,8 @@ RUN curl -fsSL "https://github.com/derailed/k9s/releases/latest/download/k9s_Lin
 # lazydocker
 RUN curl -fsSL "https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_$(uname -s)_$(uname -m).tar.gz" | tar -xzf - -C /usr/local/bin lazydocker
 
-# dive - Docker image explorer
-RUN go install github.com/wagoodman/dive@latest
+# dive - Docker image explorer (optional, may require newer Go)
+RUN go install github.com/wagoodman/dive@latest || true
 
 # ctop - Container metrics
 RUN curl -fsSL "https://github.com/bcicen/ctop/releases/latest/download/ctop-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/ctop && \
@@ -200,8 +200,8 @@ RUN curl -fsSL "https://github.com/bcicen/ctop/releases/latest/download/ctop-$(u
 # ============================================================
 RUN apk add --no-cache websocat
 
-# grpcurl
-RUN go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest
+# grpcurl (optional, may require newer Go)
+RUN go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest || true
 
 # mkcert - local CA
 RUN curl -fsSL "https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/mkcert && \
@@ -212,11 +212,11 @@ RUN curl -fsSL "https://github.com/FiloSottile/mkcert/releases/latest/download/m
 # ============================================================
 RUN apk add --no-cache jq yq miller
 
-# fx - JSON viewer
-RUN go install github.com/antonmedv/fx@latest
+# fx - JSON viewer (optional, may require newer Go)
+RUN go install github.com/antonmedv/fx@latest || true
 
-# gron - Make JSON greppable
-RUN go install github.com/tomnomnom/gron@latest
+# gron - Make JSON greppable (optional, may require newer Go)
+RUN go install github.com/tomnomnom/gron@latest || true
 
 # dasel - Query data formats
 RUN curl -fsSL "https://github.com/TomWright/dasel/releases/latest/download/dasel_linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/dasel && \
@@ -232,8 +232,8 @@ RUN apk add --no-cache age
 RUN curl -fsSL "https://github.com/getsops/sops/releases/latest/download/sops-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/sops && \
     chmod +x /usr/local/bin/sops
 
-# cosign - container signing
-RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+# cosign - container signing (optional, may require newer Go)
+RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest || true
 
 # trivy - vulnerability scanner
 RUN curl -fsSL "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_$(uname -s)_$(uname -m).tar.gz" | tar -xzf - -C /usr/local/bin trivy
