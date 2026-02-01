@@ -1,8 +1,8 @@
 # ============================================================
-# Core Developer - Full-Fat Development Environment
+# Core Developer - PHP & Go Development Environment
 #
-# A comprehensive developer environment with 100+ embedded tools
-# for AI-assisted development with Claude Code CLI.
+# Slimmed down environment for PHP and Go development
+# with Claude Code CLI support.
 #
 # Build: docker build -t core-dev .
 # Run:   docker run -it -v $(pwd):/workspace core-dev
@@ -14,7 +14,7 @@ FROM alpine:${ALPINE_VERSION}
 
 LABEL maintainer="Snider <snider@host.uk.com>"
 LABEL org.opencontainers.image.source="https://github.com/host-uk/core-images"
-LABEL org.opencontainers.image.description="Full-fat developer environment with 100+ tools"
+LABEL org.opencontainers.image.description="PHP & Go developer environment"
 LABEL org.opencontainers.image.licenses="EUPL-1.2"
 LABEL org.opencontainers.image.vendor="Host UK"
 LABEL org.opencontainers.image.title="Core Developer"
@@ -26,9 +26,7 @@ ENV TERM=xterm-256color
 ENV EDITOR=nvim
 ENV SHELL=/bin/zsh
 ENV GOPATH=/root/go
-ENV CARGO_HOME=/root/.cargo
-ENV RUSTUP_HOME=/root/.rustup
-ENV PATH="/root/go/bin:/root/.cargo/bin:/root/.local/bin:/root/.composer/vendor/bin:/usr/local/bin:${PATH}"
+ENV PATH="/root/go/bin:/root/.local/bin:/root/.composer/vendor/bin:/usr/local/bin:${PATH}"
 
 # ============================================================
 # Core System & Build Tools
@@ -39,11 +37,11 @@ RUN apk add --no-cache \
     # Network tools
     curl wget ca-certificates bind-tools iputils openssh-client \
     # Build essentials
-    make cmake ninja meson gcc g++ musl-dev linux-headers \
+    make gcc g++ musl-dev linux-headers \
     # Core utilities
-    coreutils findutils grep sed gawk less tree ncdu shadow gettext \
+    coreutils findutils grep sed gawk less tree shadow gettext \
     # Compression
-    zip unzip tar gzip xz bzip2 zstd \
+    zip unzip tar gzip xz \
     # Process & system
     htop procps util-linux \
     # Crypto
@@ -58,55 +56,23 @@ RUN apk add --no-cache \
     # Terminal
     tmux starship \
     # Editors
-    vim nano neovim helix \
+    vim nano neovim \
     # Directory navigation
-    zoxide broot
+    zoxide
 
 # ============================================================
 # VCS & Git Tools
 # ============================================================
-# Note: git-delta not in Alpine repos, install via cargo if needed
 RUN apk add --no-cache \
     git git-lfs github-cli lazygit
 
 # ============================================================
-# Node.js Ecosystem
+# Node.js (minimal - for Claude Code CLI only)
 # ============================================================
 RUN apk add --no-cache nodejs npm
 
-# Bun runtime
-RUN curl -fsSL https://bun.sh/install | bash && \
-    ln -sf /root/.bun/bin/bun /usr/local/bin/bun && \
-    ln -sf /root/.bun/bin/bunx /usr/local/bin/bunx
-
-# Deno runtime
-RUN curl -fsSL https://deno.land/install.sh | sh && \
-    ln -sf /root/.deno/bin/deno /usr/local/bin/deno
-
-# Global Node.js packages
-RUN npm install -g \
-    @anthropic-ai/claude-code \
-    typescript ts-node \
-    pnpm yarn \
-    prettier eslint \
-    @biomejs/biome \
-    turbo nx \
-    vitest \
-    typedoc \
-    @mermaid-js/mermaid-cli
-
-# ============================================================
-# Python Ecosystem
-# ============================================================
-RUN apk add --no-cache python3 py3-pip python3-dev
-
-RUN pip3 install --break-system-packages \
-    pipx uv \
-    ipython httpie \
-    ruff \
-    mkdocs mkdocs-material \
-    aider-chat \
-    llm
+# Claude Code CLI
+RUN npm install -g @anthropic-ai/claude-code
 
 # ============================================================
 # PHP Ecosystem
@@ -141,26 +107,10 @@ RUN curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/f
 # ============================================================
 RUN apk add --no-cache go
 
-# Note: Some tools require newer Go versions, so we pin compatible versions
-# or make installations optional with || true
+# Go tools (pinned to versions compatible with Go 1.24)
 RUN go install golang.org/x/tools/gopls@v0.17.1 || true && \
     go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2 && \
-    go install github.com/go-task/task/v3/cmd/task@v3.40.1 && \
-    go install github.com/casey/just@latest || true && \
-    go install github.com/boyter/scc/v3@v3.4.0 || true
-
-# ============================================================
-# Rust Ecosystem
-# ============================================================
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-
-# Rust-based CLI tools
-RUN . /root/.cargo/env && \
-    cargo install --locked \
-    hyperfine \
-    tokei \
-    xh \
-    grex
+    go install github.com/go-task/task/v3/cmd/task@v3.40.1
 
 # ============================================================
 # Database Clients
@@ -171,93 +121,15 @@ RUN apk add --no-cache \
     redis \
     sqlite
 
-# usql - universal SQL client (optional, may require newer Go)
-RUN go install github.com/xo/usql@latest || true
-
 # ============================================================
-# Infrastructure & DevOps
+# Docker Tools
 # ============================================================
-RUN apk add --no-cache \
-    docker-cli docker-cli-compose \
-    kubectl helm \
-    terraform ansible
-
-# k9s - Kubernetes TUI
-RUN curl -fsSL "https://github.com/derailed/k9s/releases/latest/download/k9s_Linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').tar.gz" | tar -xzf - -C /usr/local/bin k9s
-
-# lazydocker
-RUN curl -fsSL "https://github.com/jesseduffield/lazydocker/releases/latest/download/lazydocker_$(uname -s)_$(uname -m).tar.gz" | tar -xzf - -C /usr/local/bin lazydocker
-
-# dive - Docker image explorer (optional, may require newer Go)
-RUN go install github.com/wagoodman/dive@latest || true
-
-# ctop - Container metrics
-RUN curl -fsSL "https://github.com/bcicen/ctop/releases/latest/download/ctop-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/ctop && \
-    chmod +x /usr/local/bin/ctop
-
-# ============================================================
-# HTTP & Networking
-# ============================================================
-RUN apk add --no-cache websocat
-
-# grpcurl (optional, may require newer Go)
-RUN go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest || true
-
-# mkcert - local CA
-RUN curl -fsSL "https://github.com/FiloSottile/mkcert/releases/latest/download/mkcert-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/mkcert && \
-    chmod +x /usr/local/bin/mkcert
+RUN apk add --no-cache docker-cli docker-cli-compose
 
 # ============================================================
 # Data Processing
 # ============================================================
-RUN apk add --no-cache jq yq miller
-
-# fx - JSON viewer (optional, may require newer Go)
-RUN go install github.com/antonmedv/fx@latest || true
-
-# gron - Make JSON greppable (optional, may require newer Go)
-RUN go install github.com/tomnomnom/gron@latest || true
-
-# dasel - Query data formats
-RUN curl -fsSL "https://github.com/TomWright/dasel/releases/latest/download/dasel_linux_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/dasel && \
-    chmod +x /usr/local/bin/dasel
-
-# ============================================================
-# Security Tools
-# ============================================================
-# age - encryption
-RUN apk add --no-cache age
-
-# sops - secrets management
-RUN curl -fsSL "https://github.com/getsops/sops/releases/latest/download/sops-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/')" -o /usr/local/bin/sops && \
-    chmod +x /usr/local/bin/sops
-
-# cosign - container signing (optional, may require newer Go)
-RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest || true
-
-# trivy - vulnerability scanner
-RUN curl -fsSL "https://github.com/aquasecurity/trivy/releases/latest/download/trivy_$(uname -s)_$(uname -m).tar.gz" | tar -xzf - -C /usr/local/bin trivy
-
-# trufflehog - secret scanner
-RUN curl -fsSL "https://github.com/trufflesecurity/trufflehog/releases/latest/download/trufflehog_$(uname -s)_$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').tar.gz" | tar -xzf - -C /usr/local/bin trufflehog
-
-# ============================================================
-# Monitoring
-# ============================================================
-RUN apk add --no-cache btop
-
-# ============================================================
-# Testing Tools
-# ============================================================
-# k6 - load testing
-RUN curl -fsSL "https://github.com/grafana/k6/releases/latest/download/k6-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/' | sed 's/aarch64/arm64/').tar.gz" | tar -xzf - --strip-components=1 -C /usr/local/bin
-
-# Playwright (via npm, already installed)
-
-# ============================================================
-# Misc Tools
-# ============================================================
-RUN apk add --no-cache direnv
+RUN apk add --no-cache jq yq
 
 # ============================================================
 # Shell Configuration
