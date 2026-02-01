@@ -141,12 +141,13 @@ RUN curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/f
 # ============================================================
 RUN apk add --no-cache go
 
-RUN go install golang.org/x/tools/gopls@latest && \
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest && \
-    go install github.com/go-task/task/v3/cmd/task@latest && \
-    go install github.com/casey/just@latest && \
-    go install github.com/watchexec/watchexec/cmd/watchexec@latest 2>/dev/null || true && \
-    go install github.com/boyter/scc/v3@latest
+# Note: Some tools require newer Go versions, so we pin compatible versions
+# or make installations optional with || true
+RUN go install golang.org/x/tools/gopls@v0.17.1 || true && \
+    go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.62.2 && \
+    go install github.com/go-task/task/v3/cmd/task@v3.40.1 && \
+    go install github.com/casey/just@latest || true && \
+    go install github.com/boyter/scc/v3@v3.4.0 || true
 
 # ============================================================
 # Rust Ecosystem
