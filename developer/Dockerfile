@@ -124,13 +124,12 @@ RUN ln -sf /usr/bin/php84 /usr/bin/php
 RUN curl -sS https://getcomposer.org/installer | php -- \
     --install-dir=/usr/bin --filename=composer
 
-# PHP tools via Composer
+# PHP tools via Composer (phpdocumentor excluded - doesn't support PHP 8.4 yet)
 RUN composer global require --no-interaction \
     phpunit/phpunit:^11.0 \
     pestphp/pest:^3.0 \
     phpstan/phpstan:^2.0 \
-    laravel/pint:^1.0 \
-    phpdocumentor/phpdocumentor:^3.0
+    laravel/pint:^1.0
 
 # FrankenPHP (static binary)
 RUN curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-$(uname -m | sed 's/aarch64/arm64/' | sed 's/x86_64/x86_64/')" -o /usr/local/bin/frankenphp && \
