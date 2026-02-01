@@ -124,8 +124,9 @@ RUN ln -sf /usr/bin/php84 /usr/bin/php
 RUN curl -sS https://getcomposer.org/installer | php -- \
     --install-dir=/usr/bin --filename=composer
 
-# PHP tools via Composer (phpdocumentor excluded - doesn't support PHP 8.4 yet)
-RUN composer global require --no-interaction \
+# Allow Pest plugin and install PHP tools globally
+RUN composer global config allow-plugins.pestphp/pest-plugin true && \
+    composer global require --no-interaction \
     phpunit/phpunit:^11.0 \
     pestphp/pest:^3.0 \
     phpstan/phpstan:^2.0 \
