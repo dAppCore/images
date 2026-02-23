@@ -12,5 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
+# Pre-warm Composer cache with common dependencies across all core/php-* repos.
+# This means `composer install` in CI hits local cache instead of downloading.
+RUN mkdir /tmp/warmup && cd /tmp/warmup \
+    && composer init --name=lthn/warmup --no-interaction \
+    && composer config allow-plugins.pestphp/pest-plugin true \
+    && composer config allow-plugins.phpstan/extension-installer true \
+    && composer require --no-interaction --prefer-dist \
+       laravel/framework livewire/livewire \
+       laravel/pint pestphp/pest orchestra/testbench \
+    && rm -rf /tmp/warmup
+
 # Verify
 RUN php -v && composer --version
