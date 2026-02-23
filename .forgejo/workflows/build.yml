@@ -1,0 +1,43 @@
+name: Build CI Images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'php/**'
+      - 'go/**'
+      - '.forgejo/workflows/build.yml'
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.tag }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        include:
+          - dir: php
+            tag: php-8.3
+            args: PHP_VERSION=8.3
+          - dir: php
+            tag: php-8.4
+            args: PHP_VERSION=8.4
+          - dir: go
+            tag: go-1.26
+            args: GO_VERSION=1.26
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USER }}" --password-stdin
+
+      - name: Build and push
+        run: |
+          docker build \
+            --build-arg ${{ matrix.args }} \
+            -t lthn/build:${{ matrix.tag }} \
+            ./${{ matrix.dir }}
+          docker push lthn/build:${{ matrix.tag }}
