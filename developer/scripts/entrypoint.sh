@@ -4,8 +4,8 @@
 set -e
 
 # Run pre-start hooks if they exist
-if [ -d "/root/.config/core-dev/hooks/pre-start" ]; then
-    for hook in /root/.config/core-dev/hooks/pre-start/*; do
+if [ -d "$HOME/.config/core-dev/hooks/pre-start" ]; then
+    for hook in $HOME/.config/core-dev/hooks/pre-start/*; do
         [ -x "$hook" ] && "$hook"
     done
 fi
@@ -31,14 +31,9 @@ if [ -d "$HOME/.ssh" ] && [ -z "$SSH_AUTH_SOCK" ]; then
     done
 fi
 
-# Initialize mkcert CA if not already done
-if [ ! -f "$HOME/.local/share/mkcert/rootCA.pem" ]; then
-    mkcert -install 2>/dev/null || true
-fi
-
 # Run post-start hooks if they exist
-if [ -d "/root/.config/core-dev/hooks/post-start" ]; then
-    for hook in /root/.config/core-dev/hooks/post-start/*; do
+if [ -d "$HOME/.config/core-dev/hooks/post-start" ]; then
+    for hook in $HOME/.config/core-dev/hooks/post-start/*; do
         [ -x "$hook" ] && "$hook"
     done
 fi
