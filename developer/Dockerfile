@@ -1,128 +1,209 @@
 # ============================================================
 # Core Developer — Multi-Language Development Environment
 #
-# Debian Trixie base, multi-stage scratch exports.
-# Each language is a named stage — COPY --from to cherry-pick.
+# build-base: ALL system packages (apt-get happens once, here)
+# build-php/go/node/python: language toolchains (parallel, FROM build-base)
+# build-security: security scanners + SBOM tools (FROM build-base)
+# core-dev: final assembly — COPY from stages + user setup only
 #
 # Build: docker build -t core-dev .
 # Run:   docker run -it -v $(pwd):/workspace core-dev
-#
-# Slim: docker-slim build --target core-dev --http-probe=false
 # ============================================================
 
 # ============================================================
-# Stage: php — PHP 8.5 + Composer + tools
+# Stage: build-base — ALL system packages
 # ============================================================
-FROM debian:trixie-slim AS php
+FROM debian:trixie-slim AS build-base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl gnupg && \
-    curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ trixie main" > /etc/apt/sources.list.d/sury-php.list && \
-    apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update
+RUN apt-get upgrade -y
+
+RUN apt-get install -y build-essential ca-certificates curl gnupg zsh wget dnsutils iputils-ping openssh-client socat \
+    openssl tmux jq git git-lfs htop procps zip unzip xz-utils gawk less tree docker.io docker-compose lynis file \
+    gettext-base ripgrep fd-find fzf shellcheck default-mysql-client mariadb-client postgresql-client redis-tools sqlite3 \
+    bat lsb-release apt-transport-https gcc g++ binutils binutils-gold openssl libncurses5-dev libncursesw5-dev
+
+
+# ---- Non-root user (Claude Code refuses to run as root) ----
+ARG DEV_USER=agent
+ARG DEV_UID=1000
+ARG DEV_GID=1000
+
+RUN groupadd -g ${DEV_GID} ${DEV_USER}
+RUN useradd -m -u ${DEV_UID} -g ${DEV_USER} -s /bin/zsh ${DEV_USER}
+RUN mkdir -p /home/${DEV_USER}/.config /home/${DEV_USER}/.claude /workspace
+RUN chown -R ${DEV_USER}:${DEV_USER} /home/${DEV_USER} /workspace
+
+RUN chown -R ${DEV_USER}:${DEV_USER} /home/${DEV_USER}
+
+ENV HOME=/home/${DEV_USER}
+ENV GOPATH=$HOME/go
+ENV PATH="$PATH:$HOME/.linuxbrew/bin:/usr/local/go/bin:${GOPATH}/bin:${HOME}/.local/bin:${HOME}/.composer/vendor/bin:/usr/local/bin:${PATH}"
+ENV HOMEBREW_PREFIX=$HOME/.linuxbrew
+# Install Homebrew (Linuxbrew)
+RUN git clone https://github.com/Homebrew/brew ${HOME}/.linuxbrew/Homebrew
+RUN mkdir ~/.linuxbrew/bin && ln -s ../Homebrew/bin/brew ~/.linuxbrew/bin && eval "$(/usr/local/bin/brew shellenv)"
+
+
+
+RUN chown -R agent:agent /home/agent
+
+USER ${DEV_USER}
+
+RUN brew install hadolint trivy syft grype gitleaks trufflehog dive conftest opa git-secrets gh
+
+#RUN brew install openssl@3
+
+USER root
+# ============================================================
+# Stage: build-php — PHP 8.5 + Composer + tools (FROM build-base)
+# ============================================================
+FROM build-base AS build-php
+
+RUN curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/sury-php.gpg
+RUN echo "deb [signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ trixie main" > /etc/apt/sources.list.d/sury-php.list
+RUN apt-get update
+RUN apt-get install -y \
     php8.5-cli php8.5-common php8.5-curl php8.5-mbstring php8.5-xml \
     php8.5-zip php8.5-sqlite3 php8.5-mysql php8.5-pgsql php8.5-gd \
     php8.5-intl php8.5-bcmath php8.5-soap php8.5-redis php8.5-pcov \
-    php8.5-readline php8.5-bz2 php8.5-imagick && \
-    rm -rf /var/lib/apt/lists/*
+    php8.5-readline php8.5-bz2 php8.5-imagick
 
 RUN curl -sS https://getcomposer.org/installer | php -- \
     --install-dir=/usr/bin --filename=composer
 
-RUN composer global config allow-plugins.pestphp/pest-plugin true && \
-    composer global require --no-interaction \
+RUN composer global config allow-plugins.pestphp/pest-plugin true
+RUN composer global require --no-interaction \
     phpunit/phpunit:^11.0 \
     pestphp/pest:^3.0 \
     phpstan/phpstan:^2.0 \
-    laravel/pint:^1.0
+    laravel/pint:^1.0 \
+    squizlabs/php_codesniffer:^3.0 \
+    phpmd/phpmd:^2.0 \
+    friendsofphp/php-cs-fixer:^3.0
+RUN composer global require --no-interaction vimeo/psalm
+RUN composer global require --no-interaction rector/rector
+RUN composer global require --no-interaction etsy/phan
 
-# FrankenPHP static binary — create placeholder if download fails
 RUN ARCH=$(dpkg --print-architecture | sed 's/arm64/arm64/' | sed 's/amd64/x86_64/') && \
     curl -fsSL "https://github.com/dunglas/frankenphp/releases/latest/download/frankenphp-linux-${ARCH}" \
     -o /usr/local/bin/frankenphp && chmod +x /usr/local/bin/frankenphp \
     || echo '#!/bin/sh\necho "FrankenPHP not available for this architecture"' > /usr/local/bin/frankenphp && chmod +x /usr/local/bin/frankenphp
 
-# Scratch export — just PHP runtime + composer + tools
-FROM scratch AS php-export
-COPY --from=php /usr/bin/php* /usr/bin/
-COPY --from=php /usr/lib/php/ /usr/lib/php/
-COPY --from=php /usr/share/php/ /usr/share/php/
-COPY --from=php /usr/bin/composer /usr/bin/composer
-COPY --from=php /usr/local/bin/frankenphp /usr/local/bin/frankenphp
-COPY --from=php /root/.composer /root/.composer
-
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -fsSL "https://github.com/fabpot/local-php-security-checker/releases/latest/download/local-php-security-checker_linux_${ARCH}" \
+    -o /usr/local/bin/local-php-security-checker && chmod +x /usr/local/bin/local-php-security-checker
 # ============================================================
-# Stage: golang — Go 1.26.1 + tools
+# Stage: build-go — Go 1.26.1 + tools (FROM build-base)
 # ============================================================
-FROM debian:trixie-slim AS golang
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl git && \
-    rm -rf /var/lib/apt/lists/*
+FROM build-php AS build-go
 
 ARG GO_VERSION=1.26.1
 RUN ARCH=$(dpkg --print-architecture) && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" | tar -C /usr/local -xz
 
-ENV PATH="/usr/local/go/bin:/root/go/bin:${PATH}"
-ENV GOPATH=/root/go
+ENV PATH="/usr/local/go/bin:/${DEV_USER}/go/bin:${PATH}"
+ENV GOPATH=/home/${DEV_USER}/go
 
-RUN go install golang.org/x/tools/gopls@latest 2>/dev/null || true && \
-    go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest 2>/dev/null || true && \
-    go install github.com/go-task/task/v3/cmd/task@latest 2>/dev/null || true
+USER ${DEV_USER}
+# Dev tools
+RUN go install golang.org/x/tools/gopls@latest
+RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+RUN go install github.com/go-task/task/v3/cmd/task@latest
+RUN go install github.com/securego/gosec/v2/cmd/gosec@latest
+RUN go install golang.org/x/vuln/cmd/govulncheck@latest
+RUN go install honnef.co/go/tools/cmd/staticcheck@latest
+RUN go install github.com/mgechev/revive@latest
+RUN go install github.com/gordonklaus/ineffassign@latest
+RUN go install github.com/kisielk/errcheck@latest
+RUN go install github.com/fatih/gomodifytags@latest
+RUN go install github.com/jgautheron/goconst/cmd/goconst@latest
+#RUN go install github.com/nishanths/exhaustive/cmd/exhaustive@latest
+RUN go install github.com/tomarrell/wrapcheck/v2/cmd/wrapcheck@latest
+RUN go install github.com/dkorunic/betteralign/cmd/betteralign@latest
+RUN go install github.com/polyfloyd/go-errorlint@latest
 
-# Scratch export — Go toolchain + installed tools
-FROM scratch AS golang-export
-COPY --from=golang /usr/local/go /usr/local/go
-COPY --from=golang /root/go/bin /root/go/bin
-
-# ============================================================
-# Stage: node — Node.js 22 LTS + AI agent CLIs
-# ============================================================
-FROM node:22-slim AS node
-
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
-
-# Scratch export — Node runtime + global packages
-FROM scratch AS node-export
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=node /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=node /usr/local/bin/npx /usr/local/bin/npx
-COPY --from=node /usr/local/bin/claude /usr/local/bin/claude
-COPY --from=node /usr/local/bin/codex /usr/local/bin/codex
-
-# ============================================================
-# Stage: python — Python 3.13
-# ============================================================
-FROM python:3.13-slim-trixie AS python
-
-# Scratch export — Python runtime
-FROM scratch AS python-export
-COPY --from=python /usr/local/bin/python3 /usr/local/bin/python3
-COPY --from=python /usr/local/bin/python3.13 /usr/local/bin/python3.13
-COPY --from=python /usr/local/bin/pip3 /usr/local/bin/pip3
-COPY --from=python /usr/local/lib/python3.13 /usr/local/lib/python3.13
-COPY --from=python /usr/local/lib/libpython3.13.so.1.0 /usr/local/lib/
-COPY --from=python /usr/local/lib/libpython3.so /usr/local/lib/
+# Security + SBOM tools (need Go toolchain)
+RUN go install github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@latest
+RUN go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+RUN go install golang.stackrox.io/kube-linter/cmd/kube-linter@latest
+RUN go install github.com/sigstore/cosign/v2/cmd/cosign@latest
+RUN go install github.com/google/go-containerregistry/cmd/crane@latest
+#RUN go install github.com/Checkmarx/kics/v2/cmd/kics@latest
 
 # ============================================================
-# Stage: core-dev — Final assembled image
+# Stage: build-node — Node.js 22 LTS + AI agent CLIs (FROM build-base)
 # ============================================================
-FROM debian:trixie-slim AS core-dev
+FROM build-go AS build-node
 
-LABEL maintainer="Snider <snider@host.uk.com>"
-LABEL org.opencontainers.image.source="https://github.com/host-uk/core-images"
-LABEL org.opencontainers.image.description="PHP, Go, Node, Python developer environment"
+USER root
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+RUN apt-get install -y nodejs
+
+
+ENV HOME=/home/agent
+ENV HOMEBREW_PREFIX=$HOME/.linuxbrew
+ENV HOMEBREW_CELLAR=$HOME/.linuxbrew/Cellar
+
+RUN #brew install node
+#RUN brew install --cask codex
+#RUN brew install --cask claude-code
+RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @biomejs/biome oxlint prettier eslint
+RUN npm install -g markdownlint-cli markdownlint-cli2 jsonlint stylelint
+RUN npm install -g typescript ts-prune
+RUN npm install -g npm-audit-html license-checker
+RUN npm install -g depcheck @cyclonedx/cdxgen snyk
+
+# ============================================================
+# Stage: build-python — Python 3.13 + linters (FROM build-base)
+# ============================================================
+FROM build-node AS build-python
+
+RUN apt-get install -y python3 python3-pip python3-venv
+ENV SETUPTOOLS_USE_DISTUTILS=stdlib
+# Linters
+RUN pip install --no-cache-dir --break-system-packages ruff mypy bandit pylint setuptools
+RUN pip install --no-cache-dir --break-system-packages yamllint pyflakes pycodestyle pydocstyle
+RUN pip install --no-cache-dir --break-system-packages safety vulture radon
+RUN pip install --no-cache-dir --break-system-packages flake8 black isort autopep8
+
+# Security + SBOM tools (need Python runtime)
+RUN pip install --no-cache-dir --break-system-packages semgrep
+RUN #pip install --no-cache-dir --break-system-packages scancode-toolkit
+RUN pip install --no-cache-dir --break-system-packages detect-secrets
+RUN #pip install --no-cache-dir --break-system-packages checkov
+RUN pip install --no-cache-dir --break-system-packages pip-audit
+RUN #pip install --no-cache-dir --break-system-packages tern
+RUN pip install --no-cache-dir --break-system-packages in-toto
+
+# ============================================================
+# Stage: core-dev — Final assembly (COPY only, no installs)
+# ============================================================
+FROM build-python AS core-dev
+ARG DEV_USER=agent
+
+# ---- Config files ----
+COPY --chmod=644 --chown=${DEV_USER} config/aliases.sh /etc/profile.d/aliases.sh
+COPY --chmod=755 --chown=${DEV_USER} scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
+
+RUN apt-get clean
+RUN npm cache clean --force
+
+USER ${DEV_USER}
+RUN brew upgrade
+RUN brew autoremove
+RUN brew cleanup --prune=all
+
+LABEL maintainer="Snider <snider@lthn.ai>"
+LABEL org.opencontainers.image.source="https://dappco.re/docker/developer"
+LABEL org.opencontainers.image.description="Core Developer Tooling"
 LABEL org.opencontainers.image.licenses="EUPL-1.2"
-LABEL org.opencontainers.image.vendor="Host UK"
+LABEL org.opencontainers.image.vendor="Lethean Community"
 LABEL org.opencontainers.image.title="Core Developer"
 
-ENV DEBIAN_FRONTEND=noninteractive
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV TERM=xterm-256color
@@ -131,123 +212,15 @@ ENV SHELL=/bin/zsh
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# ---- System packages ----
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Shells
-    bash zsh \
-    # Network
-    curl wget ca-certificates dnsutils iputils-ping openssh-client socat \
-    # Build essentials
-    make gcc g++ \
-    # Core utilities
-    coreutils findutils grep sed gawk less tree gettext-base \
-    # Compression
-    zip unzip tar gzip xz-utils \
-    # Process & system
-    htop procps \
-    # Crypto
-    gnupg openssl \
-    # VCS
-    git git-lfs \
-    # Editors
-    vim nano neovim \
-    # Terminal
-    tmux \
-    # Database clients
-    default-mysql-client postgresql-client redis-tools sqlite3 \
-    # Docker
-    docker.io docker-compose \
-    # Data
-    jq \
-    # PHP shared lib deps (not pulled by COPY --from)
-    libargon2-1 libsodium23 libonig5 libzip5 libgd3 \
-    libicu76 libxml2 libpq5 libsqlite3-0 libcurl4t64 \
-    libmagickwand-7.q16-10 libxslt1.1 \
-    && rm -rf /var/lib/apt/lists/*
+# ---- COPY from parallel build stages ----
 
-# ---- Modern CLI tools (from GitHub releases / cargo / pip) ----
-RUN curl -fsSL https://starship.rs/install.sh | sh -s -- -y && \
-    curl -fsSL https://github.com/dandavison/bat/releases/latest/download/bat_0.25.0_$(dpkg --print-architecture).deb -o /tmp/bat.deb && dpkg -i /tmp/bat.deb && rm /tmp/bat.deb || true
 
-# gh CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list && \
-    apt-get update && apt-get install -y --no-install-recommends gh && \
-    rm -rf /var/lib/apt/lists/*
 
-# ripgrep + fd from Debian repos
-RUN apt-get update && apt-get install -y --no-install-recommends ripgrep fd-find fzf && \
-    ln -sf /usr/bin/fdfind /usr/bin/fd && \
-    rm -rf /var/lib/apt/lists/*
+# ---- PATH ----
+ENV GOPATH=/${DEV_USER}/go
+ENV PATH="/usr/local/go/bin:/${DEV_USER}/go/bin:/${DEV_USER}/.composer/vendor/bin:/usr/local/bin:${PATH}"
 
-# ---- Copy language runtimes from build stages ----
-COPY --from=php /usr/bin/php8.5 /usr/bin/php8.5
-COPY --from=php /usr/bin/php /usr/bin/php
-COPY --from=php /usr/lib/php/ /usr/lib/php/
-COPY --from=php /etc/php/ /etc/php/
-COPY --from=php /usr/bin/composer /usr/bin/composer
-COPY --from=php /root/.composer /root/.composer
-COPY --from=php /usr/local/bin/frankenphp /usr/local/bin/frankenphp
-
-COPY --from=golang /usr/local/go /usr/local/go
-COPY --from=golang /root/go/bin /root/go/bin
-
-COPY --from=node /usr/local/bin/node /usr/local/bin/node
-COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
-COPY --from=node /usr/local/bin/npm /usr/local/bin/npm
-COPY --from=node /usr/local/bin/npx /usr/local/bin/npx
-
-COPY --from=python /usr/local/bin/python3 /usr/local/bin/python3
-COPY --from=python /usr/local/bin/python3.13 /usr/local/bin/python3.13
-COPY --from=python /usr/local/bin/pip3 /usr/local/bin/pip3
-COPY --from=python /usr/local/lib/python3.13 /usr/local/lib/python3.13
-COPY --from=python /usr/local/lib/libpython3.13.so.1.0 /usr/local/lib/
-COPY --from=python /usr/local/lib/libpython3.so /usr/local/lib/
-
-# Symlinks for CLI tools from node_modules
-RUN ln -sf /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js /usr/local/bin/claude && \
-    ln -sf /usr/local/lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex && \
-    ln -sf /usr/local/bin/python3 /usr/local/bin/python && \
-    ln -sf /usr/local/bin/pip3 /usr/local/bin/pip && \
-    ldconfig
-
-# ---- Shell configuration ----
-RUN sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended && \
-    git clone --depth=1 https://github.com/zsh-users/zsh-autosuggestions ${ZSH_CUSTOM:-/root/.oh-my-zsh/custom}/plugins/zsh-autosuggestions && \
-    git clone --depth=1 https://github.com/zsh-users/zsh-syntax-highlighting ${ZSH_CUSTOM:-/root/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
-
-COPY --chmod=644 config/zshrc /root/.zshrc
-COPY --chmod=644 config/starship.toml /root/.config/starship.toml
-COPY --chmod=644 config/tmux.conf /root/.tmux.conf
-COPY --chmod=644 config/aliases.sh /etc/profile.d/aliases.sh
-COPY --chmod=755 scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# ---- Go + Node PATH for root (build verification) ----
-ENV GOPATH=/root/go
-ENV PATH="/usr/local/go/bin:/root/go/bin:/root/.composer/vendor/bin:/usr/local/bin:${PATH}"
-
-# ---- Non-root user (Claude Code refuses to run as root) ----
-ARG DEV_USER=dev
-ARG DEV_UID=1000
-ARG DEV_GID=1000
-
-RUN groupadd -g ${DEV_GID} ${DEV_USER} && \
-    useradd -m -u ${DEV_UID} -g ${DEV_USER} -s /bin/zsh ${DEV_USER} && \
-    mkdir -p /home/${DEV_USER}/.config /home/${DEV_USER}/.claude /workspace && \
-    chown -R ${DEV_USER}:${DEV_USER} /home/${DEV_USER} /workspace && \
-    cp -r /root/.oh-my-zsh /home/${DEV_USER}/.oh-my-zsh && \
-    cp /root/.zshrc /home/${DEV_USER}/.zshrc && \
-    cp -r /root/.config/starship.toml /home/${DEV_USER}/.config/ && \
-    cp /root/.tmux.conf /home/${DEV_USER}/.tmux.conf && \
-    cp -r /root/.composer /home/${DEV_USER}/.composer && \
-    chown -R ${DEV_USER}:${DEV_USER} /home/${DEV_USER}
-
-ENV GOPATH=/home/${DEV_USER}/go
-ENV PATH="/usr/local/go/bin:/home/${DEV_USER}/go/bin:/home/${DEV_USER}/.local/bin:/home/${DEV_USER}/.composer/vendor/bin:/usr/local/bin:${PATH}"
-ENV HOME=/home/${DEV_USER}
-
-USER ${DEV_USER}
-WORKDIR /workspace
+WORKDIR /home/${DEV_USER}/workspace
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/bin/zsh"]
+CMD ["/bin/bash"]
