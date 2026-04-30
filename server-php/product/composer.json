@@ -1,0 +1,6 @@
+{
+    "name": "host-uk/server-php-placeholder",
+    "description": "Placeholder for base image",
+    "type": "project",
+    "require": {}
+}

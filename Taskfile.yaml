@@ -19,12 +19,14 @@ tasks:
     deps:
       - build:developer
       - build:server-php
+      - build:scanner-go
 
   build:docker:
     desc: Build all Docker images
     deps:
       - build:developer:docker
       - build:server-php:docker
+      - build:scanner-go:docker
 
   build:tim:
     desc: Build all TIM bundles
@@ -97,6 +99,43 @@ tasks:
       - docker push {{.REGISTRY}}/server-php:latest
 
   # ============================================================
+  # Scanner Go Image
+  # ============================================================
+  build:scanner-go:
+    desc: Build scanner-go image (Docker + TIM)
+    deps:
+      - build:scanner-go:docker
+      - build:scanner-go:tim
+
+  build:scanner-go:docker:
+    desc: Build scanner-go Docker image
+    dir: scanner-go
+    cmds:
+      - |
+        docker build \
+          --tag {{.REGISTRY}}/core-scanner-go:{{.VERSION}} \
+          --tag {{.REGISTRY}}/core-scanner-go:latest \
+          --build-arg VERSION={{.VERSION}} \
+          .
+
+  build:scanner-go:tim:
+    desc: Build scanner-go TIM bundle
+    dir: scanner-go
+    cmds:
+      - echo "TODO: core build --type tim -o ../dist/core-scanner-go-{{OS}}-{{ARCH}}.tim"
+
+  push:scanner-go:
+    desc: Push scanner-go image to registry
+    cmds:
+      - docker push {{.REGISTRY}}/core-scanner-go:{{.VERSION}}
+      - docker push {{.REGISTRY}}/core-scanner-go:latest
+
+  scan:
+    desc: "Run full scan against /src (mount your repo: -v \$(pwd):/src)"
+    cmds:
+      - docker run --rm -v {{.CLI_ARGS}}:/src {{.REGISTRY}}/core-scanner-go:latest sh -c "cd /src && govulncheck ./... && gosec ./... && golangci-lint run ./... && trivy fs ."
+
+  # ============================================================
   # Release
   # ============================================================
   release:
@@ -105,6 +144,7 @@ tasks:
       - task: build
       - task: push:developer
       - task: push:server-php
+      - task: push:scanner-go
 
   # ============================================================
   # Utilities
@@ -115,6 +155,7 @@ tasks:
       - rm -rf dist/
       - docker rmi {{.REGISTRY}}/core-dev:{{.VERSION}} || true
       - docker rmi {{.REGISTRY}}/server-php:{{.VERSION}} || true
+      - docker rmi {{.REGISTRY}}/core-scanner-go:{{.VERSION}} || true
 
   dist:
     desc: Create dist directory

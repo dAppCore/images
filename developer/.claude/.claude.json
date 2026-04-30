@@ -1,0 +1,16 @@
+{
+  "oauthAccount": {
+    "accountUuid": "d47abd23-1dc4-4ccc-b22a-1d91ddcf286b",
+    "emailAddress": "snider@host.uk.com",
+    "organizationUuid": "886228c1-02f3-4d8f-8d05-fb5d0dbba39c",
+    "hasExtraUsageEnabled": false,
+    "billingType": "stripe_subscription",
+    "accountCreatedAt": "2025-12-24T12:49:08.592329Z",
+    "subscriptionCreatedAt": "2025-12-24T12:52:04.017154Z",
+    "displayName": "Snider",
+    "organizationRole": "admin",
+    "workspaceRole": null,
+    "organizationName": "snider@host.uk.com's Organization"
+  },
+  "hasCompletedOnboarding": true
+}
