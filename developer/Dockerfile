@@ -149,7 +149,7 @@ ENV HOMEBREW_CELLAR=$HOME/.linuxbrew/Cellar
 RUN #brew install node
 #RUN brew install --cask codex
 #RUN brew install --cask claude-code
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex opencode-ai
 RUN npm install -g @biomejs/biome oxlint prettier eslint
 RUN npm install -g markdownlint-cli markdownlint-cli2 jsonlint stylelint
 RUN npm install -g typescript ts-prune
