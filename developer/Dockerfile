@@ -188,6 +188,10 @@ ARG DEV_USER=agent
 COPY --chmod=644 --chown=${DEV_USER} config/aliases.sh /etc/profile.d/aliases.sh
 COPY --chmod=755 --chown=${DEV_USER} scripts/entrypoint.sh /usr/local/bin/entrypoint.sh
 
+# XDG dirs for agents that write to ~/.local (opencode, etc.)
+RUN mkdir -p /home/${DEV_USER}/.local/share /home/${DEV_USER}/.local/state /home/${DEV_USER}/.local/cache \
+    && chown -R ${DEV_USER}:${DEV_USER} /home/${DEV_USER}/.local
+
 RUN apt-get clean
 RUN npm cache clean --force
 
